@@ -60,6 +60,7 @@ public:
     AuthOperation *signUp();
     AuthOperation *signIn();
     AuthOperation *checkIn();
+    PendingOperation *disconnectFromHost();
 
 Q_SIGNALS:
     void statusChanged(Telegram::Client::ConnectionApi::Status status, Telegram::Client::ConnectionApi::StatusReason reason);

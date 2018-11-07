@@ -28,6 +28,8 @@
 
 #ifdef DEVELOPER_BUILD
 #include "Debug_p.hpp"
+
+#define BASE_RPC_IO_DEBUG
 #endif
 
 #include <QLoggingCategory>
@@ -103,6 +105,16 @@ bool BaseRpcLayer::processPackage(const QByteArray &package)
         return false;
     }
     MTProto::Message message(messageHeader, innerData);
+    if (message.firstValue() == TLValue::GzipPacked) {
+        qCDebug(c_baseRpcLayerCategoryIn) << "processGzipPackedRpcQuery(stream);";
+        QByteArray data;
+        CTelegramStream packedStream(innerData);
+        TLValue gzipValue;
+        packedStream >> gzipValue;
+        packedStream >> data;
+        data = Utils::unpackGZip(data);
+        message.setData(data);
+    }
     return processMTProtoMessage(message);
 }
 
@@ -248,7 +260,7 @@ bool BaseRpcLayer::processMsgContainer(const MTProto::Message &message)
 {
     // https://core.telegram.org/mtproto/service_messages#simple-container
     quint32 itemsCount;
-    MTProto::Stream stream(message.data);
+    RawStream stream(message.data);
     stream >> itemsCount;
     qCDebug(c_baseRpcLayerCategoryIn) << "processContainer(stream)" << itemsCount;
 

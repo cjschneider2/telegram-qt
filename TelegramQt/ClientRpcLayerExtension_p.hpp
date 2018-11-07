@@ -45,9 +45,9 @@ bool BaseRpcLayerExtension::processReply(PendingRpcOperation *operation, TLType 
     prepareReplyStream(&stream, operation);
     stream >> *output;
 #ifdef DEVELOPER_BUILD
-    qDebug() << *output;
+    //qDebug() << *output;
 #endif
-    qDebug() << Q_FUNC_INFO << output->tlType;
+    //qDebug() << Q_FUNC_INFO << output->tlType;
     return output->isValid() && !stream.error();
 }
 

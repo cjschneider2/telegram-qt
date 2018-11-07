@@ -85,6 +85,7 @@ UpdatesRpcLayer::PendingUpdatesState *UpdatesRpcLayer::getState()
     processRpcCall(op);
     return op;
 }
+
 // End of generated Telegram API definitions
 
 } // Client namespace

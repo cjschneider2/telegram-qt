@@ -363,6 +363,11 @@ AuthOperation *ConnectionApi::checkIn()
     return d->checkIn();
 }
 
+PendingOperation *ConnectionApi::disconnectFromHost()
+{
+    return nullptr;
+}
+
 } // Client namespace
 
 } // Telegram namespace

@@ -9,10 +9,12 @@
 #include "Client.hpp"
 #include "CAppInformation.hpp"
 #include "DataStorage.hpp"
+#include "MessagingApi.hpp"
 
 #include "DeclarativeClient.hpp"
 #include "DeclarativeAuthOperation.hpp"
 #include "DeclarativeSettings.hpp"
+#include "DeclarativeUserInfo.hpp"
 
 class AccountSecretHelper : public QObject
 {
@@ -197,58 +199,14 @@ private:
     Format m_format;
 };
 
-class MessageModel : public QObject
+class MessageSender : public Telegram::Client::DeclarativeClientOperator
 {
     Q_OBJECT
     Q_PROPERTY(Telegram::Peer peer READ peer WRITE setPeer NOTIFY peerChanged)
-public:
-    explicit MessageModel(QObject *parent = nullptr) :
-        QObject(parent)
-    {
-    }
-
-    enum MessageType {
-        MessageTypeText,
-        MessageTypePhoto,
-        MessageTypeAudio,
-        MessageTypeVideo,
-        MessageTypeContact,
-        MessageTypeDocument,
-        MessageTypeGeo,
-        MessageTypeWebPage,
-        MessageTypeNewDay,
-        MessageTypeServiceAction,
-    };
-    Q_ENUM(MessageType)
-
-    Telegram::Peer peer() const { return m_peer; }
-
-public slots:
-    void setPeer(const Telegram::Peer peer)
-    {
-        if (m_peer == peer) {
-            return;
-        }
-        m_peer = peer;
-        emit peerChanged(peer);
-    }
-
-signals:
-    void peerChanged(Telegram::Peer peer);
-
-protected:
-    Telegram::Peer m_peer;
-};
-
-class MessageSender : public QObject
-{
-    Q_OBJECT
-    Q_PROPERTY(Telegram::Peer peer READ peer WRITE setPeer NOTIFY peerChanged)
-//    Q_PROPERTY(Telegram::Client::DeclarativeClient *target READ target WRITE setTarget NOTIFY targetChanged)
 //    Q_PROPERTY(Telegram::MessageReference messageRef)
 public:
     explicit MessageSender(QObject *parent = nullptr) :
-        QObject(parent)
+        DeclarativeClientOperator(parent)
     {
     }
 
@@ -291,12 +249,13 @@ public slots:
 
     void sendMessage()
     {
-        emit messageSent(m_text, m_peer);
+        emit messageSent(m_peer, m_text);
+        client()->messagingApi()->sendMessage(m_peer, m_text);
     }
 
-signals:
+Q_SIGNALS:
     void peerChanged(Telegram::Peer peer);
-    void messageSent(const QString &message, const Telegram::Peer peer);
+    void messageSent(const Telegram::Peer peer, const QString &message);
 //    void draftChanged(const QString &message, const Telegram::Peer peer);
 
 protected:
@@ -333,6 +292,7 @@ public:
         qmlRegisterType<AccountSecretHelper>(uri, 1, 0, "AccountSecretHelper");
         qmlRegisterType<Telegram::Client::DeclarativeAuthOperation>(uri, 1, 0, "AuthOperation");
         qmlRegisterType<Telegram::Client::DeclarativeClient>(uri, 1, 0, "Client");
+        qmlRegisterType<Telegram::Client::DeclarativeUserInfo>(uri, 1, 0, "UserInfo");
         qmlRegisterType<Telegram::Client::DeclarativeServerOption>(uri, 1, 0, "ServerOption");
         qmlRegisterType<Telegram::Client::DeclarativeProxySettings>(uri, 1, 0, "ProxySettings");
         qmlRegisterType<Telegram::Client::DeclarativeSettings>(uri, 1, 0, "Settings");
@@ -341,7 +301,6 @@ public:
         qmlRegisterType<Telegram::Client::FileAccountStorage>(uri, 1, 0, "FileAccountStorage");
         qmlRegisterUncreatableType<Telegram::Client::DataStorage>(uri, 1, 0, "DataStorage", QStringLiteral("DataStorage is an abstract type"));
         qmlRegisterType<Telegram::Client::InMemoryDataStorage>(uri, 1, 0, "InMemoryDataStorage");
-        qmlRegisterType<MessageModel>(uri, 1, 0, "MessageModel");
         qmlRegisterType<MessageSender>(uri, 1, 0, "MessageSender");
     }
 };

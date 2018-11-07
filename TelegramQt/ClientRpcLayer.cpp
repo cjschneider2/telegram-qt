@@ -19,14 +19,15 @@
 #include "ClientRpcUpdatesLayer.hpp"
 #include "IgnoredMessageNotification.hpp"
 #include "SendPackageHelper.hpp"
-#include "CTelegramStream.hpp"
 #include "Utils.hpp"
 #include "Debug_p.hpp"
+#include "TLTypesDebug.hpp"
 #include "CAppInformation.hpp"
 #include "PendingRpcOperation.hpp"
 #include "UpdatesLayer.hpp"
 
 #include "MTProto/MessageHeader.hpp"
+#include "MTProto/Stream.hpp"
 
 #include <QLoggingCategory>
 
@@ -97,7 +98,7 @@ bool RpcLayer::processMTProtoMessage(const MTProto::Message &message)
         processIgnoredMessageNotification(message.skipTLValue());
         break;
     case TLValue::GzipPacked:
-        qCDebug(c_clientRpcLayerCategory) << "processGzipPackedRpcQuery(stream);";
+        qCWarning(c_clientRpcLayerCategory) << "processGzipPackedRpcQuery() // should be processed in the base class";
         break;
     case TLValue::Pong:
     {
@@ -174,7 +175,7 @@ void RpcLayer::processSessionCreated(const MTProto::Message &message)
 
 void RpcLayer::processIgnoredMessageNotification(const MTProto::Message &message)
 {
-    MTProto::Stream stream(message.data);
+    RawStream stream(message.data);
     // https://core.telegram.org/mtproto/service_messages_about_messages#notice-of-ignored-error-message
     MTProto::IgnoredMessageNotification notification;
     stream >> notification;

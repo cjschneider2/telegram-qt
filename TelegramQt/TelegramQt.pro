@@ -48,6 +48,7 @@ SOURCES += \
     ContactsApi.cpp \
     DataStorage.cpp \
     IgnoredMessageNotification.cpp \
+    FileDataStorage.cpp \
     RpcError.cpp \
     RpcLayer.cpp \
     Connection.cpp \
@@ -120,6 +121,8 @@ HEADERS += \
     DataStorage.hpp \
     DataStorage_p.hpp \
     IgnoredMessageNotification.hpp \
+    FileDataStorage.hpp \
+    FileDataStorage_p.hpp \
     MessagingApi.hpp \
     MessagingApi_p.hpp \
     ReadyObject.hpp \

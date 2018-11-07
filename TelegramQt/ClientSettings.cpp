@@ -63,7 +63,7 @@ QVector<DcOption> Settings::defaultServerConfiguration()
 QVector<DcOption> Settings::testServerConfiguration()
 {
     static const QVector<DcOption> s_builtInTestDcs = {
-            DcOption(QStringLiteral("149.154.167.40") , 443, 2),
+            DcOption(QStringLiteral("149.154.167.50") , 443, 2),
     };
     return s_builtInTestDcs;
 }

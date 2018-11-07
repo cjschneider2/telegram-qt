@@ -118,6 +118,11 @@ void tst_toOfficial::testClientDhLayer()
     QVERIFY(!serverConfig.isEmpty());
     const DcOption firstServer = serverConfig.first();
     Client::TcpTransport *transport = new Client::TcpTransport(this);
+    QNetworkProxy proxy;
+    proxy.setType(QNetworkProxy::Socks5Proxy);
+    proxy.setHostName(QStringLiteral("127.0.0.1"));
+    proxy.setPort(12343u);
+    transport->setProxy(proxy);
 
     TestSendPackageHelper *sendHelper = new TestSendPackageHelper(transport);
     Client::DhLayer *dhLayer = new Client::DhLayer(this);
