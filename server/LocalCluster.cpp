@@ -77,6 +77,19 @@ bool LocalCluster::start()
     return !hasFails;
 }
 
+void LocalCluster::sendMessage(const QString &userId, const QString &text)
+{
+    RemoteUser *sender = getServiceUser();
+    RemoteUser *recipient = getUser(userId);
+    TLMessage m;
+    m.tlType = TLValue::Message;
+    m.message = text;
+    m.toId = recipient->toTLPeer();
+    m.fromId = sender->id();
+    m.flags |= TLMessage::FromId;
+    sender->addMessage(m);
+}
+
 User *LocalCluster::addUser(const QString &identifier, quint32 dcId)
 {
     Server *server = getServerInstance(dcId);
@@ -92,6 +105,11 @@ User *LocalCluster::getUser(const QString &identifier)
     RemoteUser *u = m_serverInstances.first()->getRemoteUser(identifier);
     Server *s = getServerInstance(u->dcId());
     return s->getUser(identifier);
+}
+
+RemoteUser *LocalCluster::getServiceUser()
+{
+    return nullptr;
 }
 
 Server *LocalCluster::getServerInstance(quint32 dcId)

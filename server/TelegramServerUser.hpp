@@ -11,8 +11,10 @@ namespace Telegram {
 
 namespace Server {
 
+class ServerApi;
 class Session;
 class User;
+class RemoteClientConnection;
 
 class MessageRecipient
 {
@@ -24,8 +26,39 @@ public:
     TLPeer toTLPeer() const;
 };
 
-class RemoteUser : public MessageRecipient
+class RemoteGroup : public MessageRecipient
 {
+public:
+    // Cross-server addMessage to group
+};
+
+class RemoteChannel : public MessageRecipient
+{
+    // Cross-server addMessage to channel
+};
+
+class LocalGroup : public RemoteGroup
+{
+public:
+    QVector<quint32> members() const;
+
+    quint32 addMessage(const TLMessage &message, Session *excludeSession = nullptr) override;
+
+protected:
+    ServerApi *api() const { return m_api; }
+    ServerApi *m_api = nullptr;
+};
+
+class LocalChannel : public RemoteChannel
+{
+public:
+    QVector<quint32> members() const;
+
+    quint32 addMessage(const TLMessage &message, Session *excludeSession = nullptr) override;
+};
+
+class RemoteUser : public MessageRecipient
+ {
 public:
     virtual quint32 id() const = 0;
     virtual QString phoneNumber() const = 0;

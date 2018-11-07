@@ -4,8 +4,10 @@
 #include "ServerApi.hpp"
 #include "ServerRpcLayer.hpp"
 #include "Session.hpp"
+#include "TelegramServerClient.hpp"
 #include "Utils.hpp"
 
+#include <QDateTime>
 #include <QLoggingCategory>
 
 namespace Telegram {
@@ -35,6 +37,37 @@ TLPeer MessageRecipient::toTLPeer() const
         break;
     }
     return result;
+}
+
+QVector<quint32> LocalGroup::members() const
+{
+    return {};
+}
+
+quint32 LocalGroup::addMessage(const TLMessage &message, Session *excludeSession)
+{
+    for (const quint32 userId : members()) {
+        if (userId == message.fromId) {
+            continue;
+        }
+        RemoteUser *user = api()->getRemoteUser(userId);
+        user->addMessage(message, excludeSession);
+    }
+    return 0;
+}
+
+QVector<quint32> LocalChannel::members() const
+{
+    return {};
+}
+
+quint32 LocalChannel::addMessage(const TLMessage &message, Session *excludeSession)
+{
+    // Local-server addMessage to channel:
+    //     channel->addMessage()
+    //     Foreach (user : member)
+    //         user->updateChannelPts()
+    return 0;
 }
 
 UserContact RemoteUser::toContact() const

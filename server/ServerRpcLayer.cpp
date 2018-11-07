@@ -232,7 +232,7 @@ void RpcLayer::sendIgnoredMessageNotification(quint32 errorCode, const MTProto::
 
 bool RpcLayer::sendRpcError(const RpcError &error, quint64 messageId)
 {
-    CTelegramStream output(CTelegramStream::WriteOnly);
+    CRawStreamEx output(CRawStreamEx::WriteOnly);
     output << error;
     return sendRpcReply(output.getData(), messageId);
 }
@@ -308,8 +308,12 @@ bool RpcLayer::processDecryptedMessageHeader(const MTProto::FullMessageHeader &h
         return false;
     }
 
-    if (header.sequenceNumber < m_session->lastSequenceNumber) {
+    if (header.sequenceNumber > (m_session->lastSequenceNumber + 2)) {
         sendIgnoredMessageNotification(MTProto::IgnoredMessageNotification::SequenceNumberTooHigh, header);
+        return false;
+    }
+    if (header.sequenceNumber < m_session->lastSequenceNumber) {
+        sendIgnoredMessageNotification(MTProto::IgnoredMessageNotification::SequenceNumberTooLow, header);
         return false;
     }
     if (header.messageId & 3ull) {

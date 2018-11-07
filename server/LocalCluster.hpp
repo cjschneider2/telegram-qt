@@ -23,6 +23,7 @@
 
 #include "DcConfiguration.hpp"
 #include "TelegramNamespace.hpp"
+#include "ServerNamespace.hpp"
 
 namespace Telegram {
 
@@ -58,8 +59,11 @@ public:
 
     bool start();
 
+    void sendMessage(const QString &userId, const QString &text);
+
     User *addUser(const QString &identifier, quint32 dcId);
     User *getUser(const QString &identifier);
+    RemoteUser *getServiceUser();
 
     QVector<Server*> getServerInstances() { return m_serverInstances; }
     Server *getServerInstance(quint32 dcId);
