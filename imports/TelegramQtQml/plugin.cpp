@@ -287,8 +287,8 @@ public:
     {
         Q_ASSERT(QByteArray(uri) == QByteArray("TelegramQt"));
         Telegram::initialize();
-        int versionMajor = 0;
-        int versionMinor = 2;
+        int versionMajor = 1;
+        int versionMinor = 0;
         qmlRegisterSingletonType<TelegramNamespace>(uri, versionMajor, versionMinor, "Namespace", &telegram_namespace_provider);
         qmlRegisterType<CAppInformation>(uri, versionMajor, versionMinor, "AppInformation");
         qmlRegisterType<AccountSecretHelper>(uri, versionMajor, versionMinor, "AccountSecretHelper");
