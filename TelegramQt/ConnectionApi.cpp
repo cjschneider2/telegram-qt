@@ -243,6 +243,10 @@ void ConnectionApiPrivate::onUpcomingConnectionStatusChanged(BaseConnection::Sta
     case BaseConnection::Status::Connected:
         setStatus(ConnectionApi::StatusConnected);
         break;
+    case BaseConnection::Status::HasDhKey:
+    case BaseConnection::Status::Signed:
+    case BaseConnection::Status::Failed:
+        break;
     }
 }
 

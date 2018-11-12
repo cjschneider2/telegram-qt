@@ -6,11 +6,13 @@
 #include "MessagingApi.hpp"
 #include "MessagingApi_p.hpp"
 
+#include "ClientRpcUpdatesLayer.hpp"
+
 #include "TLTypesDebug.hpp"
 
 #include <QLoggingCategory>
 
-Q_LOGGING_CATEGORY(c_updatesLoggingCategory, "telegram.client.updates", QtWarningMsg)
+Q_LOGGING_CATEGORY(c_updatesLoggingCategory, "telegram.client.updates", QtDebugMsg)
 
 namespace Telegram {
 
@@ -21,6 +23,17 @@ UpdatesInternalApi::UpdatesInternalApi(QObject *parent) :
 {
 }
 
+void UpdatesInternalApi::sync()
+{
+    qDebug() << Q_FUNC_INFO;
+    UpdatesRpcLayer::PendingUpdatesState *op = m_backend->updatesLayer()->getState();
+    connect(op, &PendingOperation::finished, this, [op] () {
+        TLUpdatesState res;
+        op->getResult(&res);
+        qDebug() << "res:" << res;
+    });
+}
+
 void UpdatesInternalApi::setBackend(Backend *backend)
 {
     m_backend = backend;
@@ -29,6 +42,8 @@ void UpdatesInternalApi::setBackend(Backend *backend)
 bool UpdatesInternalApi::processUpdates(const TLUpdates &updates)
 {
     qCDebug(c_updatesLoggingCategory) << "updates:" << updates;
+
+    //sync();
 
     DataInternalApi *internal = dataInternalApi();
 
