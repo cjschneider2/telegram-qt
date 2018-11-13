@@ -73,6 +73,7 @@ void BaseConnection::setStatus(BaseConnection::Status status, BaseConnection::St
 
 void BaseConnection::onTransportStateChanged()
 {
+    qWarning() << Q_FUNC_INFO << m_transport->state();
     switch (m_transport->state()) {
     case QAbstractSocket::ConnectedState:
         if (m_sendHelper->authKey().isEmpty()) {

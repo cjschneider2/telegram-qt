@@ -29,10 +29,15 @@
 #include "Operations/ClientAuthOperation.hpp"
 
 #include "ContactsApi.hpp"
-#include "TelegramServerUser.hpp"
-#include "ServerApi.hpp"
-#include "ServerRpcLayer.hpp"
+#include "CTelegramTransport.hpp"
 #include "DcConfiguration.hpp"
+
+// Server
+#include "TelegramServer.hpp"
+#include "TelegramServerClient.hpp"
+#include "TelegramServerUser.hpp"
+#include "ServerRpcLayer.hpp"
+#include "Session.hpp"
 #include "LocalCluster.hpp"
 
 #include <QTest>
@@ -70,6 +75,7 @@ private slots:
     void cleanupTestCase();
     void testClientConnection_data();
     void testClientConnection();
+    void reconnect();
 };
 
 tst_ConnectionApi::tst_ConnectionApi(QObject *parent) :
@@ -216,6 +222,112 @@ void tst_ConnectionApi::testClientConnection()
     QCOMPARE(client.accountStorage()->dcInfo().id, server->dcId());
     QCOMPARE(client.accountStorage()->dcInfo().id, userData.dcId);
     QVERIFY(client.contactsApi()->selfContactId());
+}
+
+void tst_ConnectionApi::reconnect()
+{
+    const UserData userData = c_userWithPassword;
+    const DcOption clientDcOption = c_localDcOptions.first();
+
+    const RsaKey publicKey = Utils::loadRsaKeyFromFile(TestKeyData::publicKeyFileName());
+    QVERIFY2(publicKey.isValid(), "Unable to read public RSA key");
+    const RsaKey privateKey = Utils::loadRsaPrivateKeyFromFile(TestKeyData::privateKeyFileName());
+    QVERIFY2(privateKey.isValid(), "Unable to read private RSA key");
+
+    Test::AuthProvider authProvider;
+    Telegram::Server::LocalCluster cluster;
+    cluster.setAuthorizationProvider(&authProvider);
+    cluster.setServerPrivateRsaKey(privateKey);
+    cluster.setServerConfiguration(c_localDcConfiguration);
+    QVERIFY(cluster.start());
+
+    Server::Server *server = cluster.getServerInstance(userData.dcId);
+    QVERIFY(server);
+
+    Server::User *user = tryAddUser(&cluster, userData);
+    QVERIFY(user);
+
+    Client::Client client;
+    setupClientHelper(&client, userData, publicKey, clientDcOption);
+    Client::ConnectionApi *connectionApi = client.connectionApi();
+
+    QSignalSpy clientConnectionStatusSpy(connectionApi, &Client::ConnectionApi::statusChanged);
+    QCOMPARE(connectionApi->status(), Telegram::Client::ConnectionApi::StatusDisconnected);
+
+    // --- Sign in ---
+    Client::AuthOperation *signInOperation = connectionApi->signIn();
+    signInOperation->setPhoneNumber(userData.phoneNumber);
+    QSignalSpy serverAuthCodeSpy(&authProvider, &Test::AuthProvider::codeSent);
+    QSignalSpy authCodeSpy(signInOperation, &Client::AuthOperation::authCodeRequired);
+
+    TRY_COMPARE(clientConnectionStatusSpy.count(), 1);
+    QCOMPARE(connectionApi->status(), Telegram::Client::ConnectionApi::StatusConnecting);
+    QCOMPARE(clientConnectionStatusSpy.takeFirst().first().value<int>(), static_cast<int>(Client::ConnectionApi::StatusConnecting));
+    QVERIFY2(authCodeSpy.isEmpty(), "Internal error: auth code sent in Connecting state");
+
+    TRY_COMPARE(clientConnectionStatusSpy.count(), 1);
+    QCOMPARE(connectionApi->status(), Telegram::Client::ConnectionApi::StatusConnected);
+    QCOMPARE(clientConnectionStatusSpy.takeFirst().first().value<int>(), static_cast<int>(Client::ConnectionApi::StatusConnected));
+
+    TRY_COMPARE(client.dataStorage()->serverConfiguration().dcOptions, cluster.serverConfiguration().dcOptions);
+    TRY_VERIFY(!authCodeSpy.isEmpty());
+    QCOMPARE(authCodeSpy.count(), 1);
+    QCOMPARE(serverAuthCodeSpy.count(), 1);
+    QList<QVariant> authCodeSentArguments = serverAuthCodeSpy.takeFirst();
+    QCOMPARE(authCodeSentArguments.count(), 2);
+    const QString authCode = authCodeSentArguments.at(1).toString();
+
+    TRY_COMPARE(clientConnectionStatusSpy.count(), 1);
+    QCOMPARE(connectionApi->status(), Telegram::Client::ConnectionApi::StatusAuthRequired);
+    QCOMPARE(clientConnectionStatusSpy.takeFirst().first().value<int>(), static_cast<int>(Client::ConnectionApi::StatusAuthRequired));
+
+    signInOperation->submitAuthCode(authCode);
+
+    if (!userData.password.isEmpty()) {
+        QSignalSpy authPasswordSpy(signInOperation, &Client::AuthOperation::passwordRequired);
+        QSignalSpy passwordCheckFailedSpy(signInOperation, &Client::AuthOperation::passwordCheckFailed);
+        TRY_VERIFY2(!authPasswordSpy.isEmpty(), "The user has a password-protection, "
+                                                 "but there are no passwordRequired signals on the client side");
+        QCOMPARE(authPasswordSpy.count(), 1);
+        QVERIFY(passwordCheckFailedSpy.isEmpty());
+
+        signInOperation->submitPassword(userData.password + QStringLiteral("invalid"));
+        TRY_VERIFY2(!passwordCheckFailedSpy.isEmpty(), "The submitted password is not valid, "
+                                                        "but there are not signals on the client side");
+        QVERIFY(!signInOperation->isFinished());
+        QCOMPARE(passwordCheckFailedSpy.count(), 1);
+
+        signInOperation->submitPassword(userData.password);
+    }
+    TRY_VERIFY2(signInOperation->isSucceeded(), "Unexpected sign in fail");
+
+    TRY_VERIFY(!clientConnectionStatusSpy.isEmpty());
+    QCOMPARE(clientConnectionStatusSpy.takeFirst().first().value<int>(), static_cast<int>(Client::ConnectionApi::StatusAuthenticated));
+
+    TRY_VERIFY(!clientConnectionStatusSpy.isEmpty());
+    QCOMPARE(connectionApi->status(), Telegram::Client::ConnectionApi::StatusReady);
+    QCOMPARE(clientConnectionStatusSpy.takeFirst().first().value<int>(), static_cast<int>(Client::ConnectionApi::StatusReady));
+    QVERIFY(clientConnectionStatusSpy.isEmpty());
+
+    QCOMPARE(client.accountStorage()->phoneNumber(), userData.phoneNumber);
+    QCOMPARE(client.accountStorage()->dcInfo().id, server->dcId());
+    QCOMPARE(client.accountStorage()->dcInfo().id, userData.dcId);
+    QCOMPARE(user->activeSessions().count(), 1);
+    Server::Session *activeSession = user->activeSessions().first();
+    QVERIFY(activeSession);
+    CTelegramTransport *serverSideTransport = activeSession->getConnection()->transport();
+    QVERIFY(serverSideTransport);
+
+    QVERIFY(clientConnectionStatusSpy.isEmpty());
+    // Brutal disconnect from server side
+    serverSideTransport->disconnectFromHost();
+
+    TRY_VERIFY(!clientConnectionStatusSpy.isEmpty());
+    {
+        QVariantList firstSignal = clientConnectionStatusSpy.takeFirst();
+        QCOMPARE(firstSignal.first().value<int>(), static_cast<int>(Client::ConnectionApi::StatusConnecting));
+        QCOMPARE(firstSignal.last().value<int>(), static_cast<int>(Client::ConnectionApi::StatusReasonRemote));
+    }
 }
 
 QTEST_GUILESS_MAIN(tst_ConnectionApi)
