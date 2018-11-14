@@ -67,7 +67,7 @@ protected slots:
     void onUpcomingConnectionStatusChanged(BaseConnection::Status status, BaseConnection::StatusReason reason);
     void onAuthFinished(PendingOperation *operation);
     void onAuthCodeRequired();
-    void onMainConnectionStatusChanged();
+    void onMainConnectionStatusChanged(BaseConnection::Status status, BaseConnection::StatusReason reason);
     void onSyncFinished(PendingOperation *operation);
     void onPingFailed();
 

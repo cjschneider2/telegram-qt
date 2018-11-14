@@ -67,7 +67,7 @@ void ConnectionApiPrivate::setMainConnection(Connection *connection)
 {
     m_mainConnection = connection;
     connect(m_mainConnection, &BaseConnection::statusChanged, this, &ConnectionApiPrivate::onMainConnectionStatusChanged);
-    onMainConnectionStatusChanged();
+    onMainConnectionStatusChanged(connection->status(), Connection::StatusReason::Local);
 }
 
 PendingOperation *ConnectionApiPrivate::connectToServer(const QVector<DcOption> &dcOptions)
@@ -275,36 +275,38 @@ void ConnectionApiPrivate::onAuthCodeRequired()
     setStatus(ConnectionApi::StatusAuthRequired);
 }
 
-void ConnectionApiPrivate::onMainConnectionStatusChanged()
+void ConnectionApiPrivate::onMainConnectionStatusChanged(BaseConnection::Status status, BaseConnection::StatusReason reason)
 {
     if (!m_mainConnection) {
         return;
     }
 
-    if (m_mainConnection) {
-        const bool keepAlive = (m_mainConnection->status() == Connection::Status::Signed) || (m_mainConnection->status() == Connection::Status::HasDhKey);
-        if (keepAlive) {
-            if (!m_pingOperation) {
-                m_pingOperation = new PingOperation(this);
-                m_pingOperation->setSettings(backend()->m_settings);
-                m_pingOperation->setRpcLayer(m_mainConnection->rpcLayer());
-                connect(m_pingOperation, &PingOperation::pingFailed, this, &ConnectionApiPrivate::onPingFailed);
-            }
-            m_pingOperation->ensureActive();
-        } else {
-            if (m_pingOperation) {
-                m_pingOperation->ensureInactive();
-            }
+    const bool keepAliveIsWanted = (status == Connection::Status::Signed) || (status == Connection::Status::HasDhKey);
+    if (keepAliveIsWanted) {
+        if (!m_pingOperation) {
+            m_pingOperation = new PingOperation(this);
+            m_pingOperation->setSettings(backend()->m_settings);
+            m_pingOperation->setRpcLayer(m_mainConnection->rpcLayer());
+            connect(m_pingOperation, &PingOperation::pingFailed, this, &ConnectionApiPrivate::onPingFailed);
+        }
+        m_pingOperation->ensureActive();
+    } else {
+        if (m_pingOperation) {
+            m_pingOperation->ensureInactive();
         }
     }
 
-    const bool signedIn = m_mainConnection->status() == Connection::Status::Signed;
-    if (signedIn) {
+    switch (status) {
+    case Connection::Status::Signed:
+    {
         backend()->syncAccountToStorage();
         setStatus(ConnectionApi::StatusAuthenticated);
         PendingOperation *syncOperation = backend()->sync();
         connect(syncOperation, &PendingOperation::finished, this, &ConnectionApiPrivate::onSyncFinished);
         syncOperation->startLater();
+    }
+        break;
+    default:
     }
 }
 
