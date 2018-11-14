@@ -328,6 +328,13 @@ void tst_ConnectionApi::reconnect()
         QCOMPARE(firstSignal.first().value<int>(), static_cast<int>(Client::ConnectionApi::StatusConnecting));
         QCOMPARE(firstSignal.last().value<int>(), static_cast<int>(Client::ConnectionApi::StatusReasonRemote));
     }
+
+    TRY_VERIFY(!clientConnectionStatusSpy.isEmpty());
+    {
+        QVariantList firstSignal = clientConnectionStatusSpy.takeFirst();
+        QCOMPARE(firstSignal.first().value<int>(), static_cast<int>(Client::ConnectionApi::StatusConnected));
+        QCOMPARE(firstSignal.last().value<int>(), static_cast<int>(Client::ConnectionApi::StatusReasonRemote));
+    }
 }
 
 QTEST_GUILESS_MAIN(tst_ConnectionApi)

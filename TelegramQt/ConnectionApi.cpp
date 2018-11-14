@@ -34,13 +34,13 @@ ConnectionApiPrivate *ConnectionApiPrivate::get(ConnectionApi *parent)
 bool ConnectionApiPrivate::isSignedIn() const
 {
     switch (m_status) {
-    case Status::StatusAuthenticated:
-    case Status::StatusReady:
+    case ConnectionApi::StatusAuthenticated:
+    case ConnectionApi::StatusReady:
         return true;
-    case Status::StatusDisconnected:
-    case Status::StatusConnecting:
-    case Status::StatusConnected:
-    case Status::StatusAuthRequired:
+    case ConnectionApi::StatusDisconnected:
+    case ConnectionApi::StatusConnecting:
+    case ConnectionApi::StatusConnected:
+    case ConnectionApi::StatusAuthRequired:
         return false;
     }
     Q_UNREACHABLE();
@@ -225,7 +225,7 @@ void ConnectionApiPrivate::onConnectOperationFinished(PendingOperation *operatio
     }
     m_connectToServerOperation = nullptr;
     operation->deleteLater();
-    setStatus(ConnectionApi::StatusDisconnected);
+    setStatus(ConnectionApi::StatusDisconnected, ConnectionApi::StatusReasonNone);
 }
 
 void ConnectionApiPrivate::onUpcomingConnectionStatusChanged(BaseConnection::Status status,
@@ -235,13 +235,13 @@ void ConnectionApiPrivate::onUpcomingConnectionStatusChanged(BaseConnection::Sta
     switch (status) {
     case BaseConnection::Status::Disconnected:
     case BaseConnection::Status::Disconnecting:
-        setStatus(ConnectionApi::StatusDisconnected);
+        setStatus(ConnectionApi::StatusDisconnected, ConnectionApi::StatusReasonNone);
         break;
     case BaseConnection::Status::Connecting:
-        setStatus(ConnectionApi::StatusConnecting);
+        setStatus(ConnectionApi::StatusConnecting, ConnectionApi::StatusReasonNone);
         break;
     case BaseConnection::Status::Connected:
-        setStatus(ConnectionApi::StatusConnected);
+        setStatus(ConnectionApi::StatusConnected, ConnectionApi::StatusReasonNone);
         break;
     case BaseConnection::Status::HasDhKey:
     case BaseConnection::Status::Signed:
@@ -257,7 +257,7 @@ void ConnectionApiPrivate::onAuthFinished(PendingOperation *operation)
         return;
     }
     if (!operation->isSucceeded()) {
-        setStatus(ConnectionApi::StatusAuthRequired);
+        setStatus(ConnectionApi::StatusAuthRequired, ConnectionApi::StatusReasonNone);
         qCDebug(c_connectionApiLoggingCategory) << Q_FUNC_INFO << "TODO?";
         return;
     }
@@ -272,7 +272,7 @@ void ConnectionApiPrivate::onAuthFinished(PendingOperation *operation)
 
 void ConnectionApiPrivate::onAuthCodeRequired()
 {
-    setStatus(ConnectionApi::StatusAuthRequired);
+    setStatus(ConnectionApi::StatusAuthRequired, ConnectionApi::StatusReasonRemote);
 }
 
 void ConnectionApiPrivate::onMainConnectionStatusChanged(BaseConnection::Status status, BaseConnection::StatusReason reason)
@@ -300,20 +300,34 @@ void ConnectionApiPrivate::onMainConnectionStatusChanged(BaseConnection::Status 
     case Connection::Status::Signed:
     {
         backend()->syncAccountToStorage();
-        setStatus(ConnectionApi::StatusAuthenticated);
+        setStatus(ConnectionApi::StatusAuthenticated, ConnectionApi::StatusReasonNone);
         PendingOperation *syncOperation = backend()->sync();
         connect(syncOperation, &PendingOperation::finished, this, &ConnectionApiPrivate::onSyncFinished);
         syncOperation->startLater();
+        break;
+    }
+    case Connection::Status::Disconnected:
+    {
+        switch (m_status) {
+        case ConnectionApi::StatusDisconnecting:
+            setStatus(ConnectionApi::StatusDisconnected, ConnectionApi::StatusReasonLocal);
+            break;
+        case ConnectionApi::StatusAuthenticated:
+        case ConnectionApi::StatusReady:
+            setStatus(ConnectionApi::StatusConnecting, ConnectionApi::StatusReasonRemote);
+            break;
+        }
     }
         break;
     default:
+        qWarning() << Q_FUNC_INFO << status << reason;
     }
 }
 
 void ConnectionApiPrivate::onSyncFinished(PendingOperation *operation)
 {
     if (operation->isSucceeded()) {
-        setStatus(ConnectionApi::StatusReady);
+        setStatus(ConnectionApi::StatusReady, ConnectionApi::StatusReasonLocal);
     } else {
         qCCritical(c_connectionApiLoggingCategory) << Q_FUNC_INFO << "Unexpected sync operation status" << operation->errorDetails();
     }
@@ -324,14 +338,14 @@ void ConnectionApiPrivate::onPingFailed()
     qCWarning(c_connectionApiLoggingCategory) << Q_FUNC_INFO;
 }
 
-void ConnectionApiPrivate::setStatus(ConnectionApiPrivate::Status newStatus)
+void ConnectionApiPrivate::setStatus(ConnectionApi::Status status, ConnectionApi::StatusReason reason)
 {
     Q_Q(ConnectionApi);
-    if (m_status == newStatus) {
+    if (m_status == status) {
         return;
     }
-    m_status = newStatus;
-    emit q->statusChanged(newStatus, ConnectionApi::StatusReasonNone);
+    m_status = status;
+    emit q->statusChanged(status, reason);
 }
 
 ConnectionApi::ConnectionApi(QObject *parent) :

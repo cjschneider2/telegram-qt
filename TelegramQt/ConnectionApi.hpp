@@ -38,6 +38,7 @@ public:
 
     enum Status {
         StatusDisconnected,
+        StatusDisconnecting,
         StatusConnecting,
         StatusConnected, // Transport connection
         StatusAuthRequired,

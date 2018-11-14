@@ -76,12 +76,11 @@ void BaseConnection::onTransportStateChanged()
     qWarning() << Q_FUNC_INFO << m_transport->state();
     switch (m_transport->state()) {
     case QAbstractSocket::ConnectedState:
+        setStatus(Status::Connected, StatusReason::Remote);
         if (m_sendHelper->authKey().isEmpty()) {
             m_dhLayer->setServerRsaKey(m_rsaKey);
             m_dhLayer->init();
-            setStatus(Status::Connected, StatusReason::Remote);
         } else {
-            setStatus(Status::Connected, StatusReason::Remote);
             setStatus(Status::HasDhKey, StatusReason::Local);
         }
         break;

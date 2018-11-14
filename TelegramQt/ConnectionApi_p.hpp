@@ -34,14 +34,11 @@ class Connection;
 class ConnectOperation;
 class PingOperation;
 
-class ConnectionApi;
 class ConnectionApiPrivate : public ClientApiPrivate
 {
     Q_OBJECT
     Q_DECLARE_PUBLIC(ConnectionApi)
 public:
-    using Status = ConnectionApi::Status;
-
     explicit ConnectionApiPrivate(ConnectionApi *parent = nullptr);
     static ConnectionApiPrivate *get(ConnectionApi *parent);
 
@@ -51,7 +48,7 @@ public:
     PendingOperation *connectToServer(const QVector<DcOption> &dcOptions);
     AuthOperation *signIn();
     AuthOperation *checkIn();
-    Status status() const { return m_status; }
+    ConnectionApi::Status status() const { return m_status; }
 
 public:
     // Internal TelegramQt API
@@ -72,7 +69,7 @@ protected slots:
     void onPingFailed();
 
 protected:
-    void setStatus(Status newStatus);
+    void setStatus(ConnectionApi::Status status, ConnectionApi::StatusReason reason);
 
     QHash<ConnectionSpec, Connection *> m_connections;
     Connection *m_mainConnection = nullptr;
@@ -80,7 +77,7 @@ protected:
     AuthOperation *m_authOperation = nullptr;
     PingOperation *m_pingOperation = nullptr;
 
-    Status m_status = Status::StatusDisconnected;
+    ConnectionApi::Status m_status = ConnectionApi::StatusDisconnected;
 };
 
 } // Client namespace
