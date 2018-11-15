@@ -70,7 +70,7 @@ void ConnectionApiPrivate::setMainConnection(Connection *connection)
     onMainConnectionStatusChanged(connection->status(), Connection::StatusReason::Local);
 }
 
-PendingOperation *ConnectionApiPrivate::connectToServer(const QVector<DcOption> &dcOptions)
+ConnectOperation *ConnectionApiPrivate::connectToServer(const QVector<DcOption> &dcOptions)
 {
     if (m_connectToServerOperation) {
         if (dcOptions.contains(m_connectToServerOperation->connection()->dcOption())) {
@@ -91,7 +91,7 @@ PendingOperation *ConnectionApiPrivate::connectToServer(const QVector<DcOption> 
 
     if (mainConnection()) {
         if (mainConnection()->status() != Connection::Status::Disconnected) {
-            return PendingOperation::failOperation<PendingOperation>
+            return PendingOperation::failOperation<ConnectOperation>
                     (QStringLiteral("Connection is already in progress"), this);
         } else {
             // TODO!
@@ -99,11 +99,11 @@ PendingOperation *ConnectionApiPrivate::connectToServer(const QVector<DcOption> 
     }
 
     if (!backend()->accountStorage()) {
-        return PendingOperation::failOperation<PendingOperation>
+        return PendingOperation::failOperation<ConnectOperation>
                 (QStringLiteral("Account storage is missing"), this);
     }
     if (!backend()->dataStorage()) {
-        return PendingOperation::failOperation<PendingOperation>
+        return PendingOperation::failOperation<ConnectOperation>
                 (QStringLiteral("Data storage is missing"), this);
     }
 
@@ -160,12 +160,16 @@ AuthOperation *ConnectionApiPrivate::checkIn()
     priv->setBackend(backend());
     priv->setRunMethod(&AuthOperation::checkAuthorization);
     connect(m_authOperation, &AuthOperation::finished, this, &ConnectionApiPrivate::onAuthFinished);
-    PendingOperation *connectionOperation = connectToServer({accountStorage->dcInfo()});
-    m_authOperation->runAfter(connectionOperation);
-    m_connectToServerOperation->connection()->setAuthKey(accountStorage->authKey());
-    m_connectToServerOperation->connection()->rpcLayer()->setSessionData(
-                accountStorage->sessionId(),
-                accountStorage->contentRelatedMessagesNumber());
+    if (m_mainConnection) {
+        m_authOperation->startLater();
+    } else {
+        ConnectOperation *connectionOperation = connectToServer({accountStorage->dcInfo()});
+        connectionOperation->connection()->setAuthKey(accountStorage->authKey());
+        connectionOperation->connection()->rpcLayer()->setSessionData(
+                    accountStorage->sessionId(),
+                    accountStorage->contentRelatedMessagesNumber());
+        m_authOperation->runAfter(connectionOperation);
+    }
     return m_authOperation;
 }
 
@@ -226,6 +230,14 @@ void ConnectionApiPrivate::onConnectOperationFinished(PendingOperation *operatio
     m_connectToServerOperation = nullptr;
     operation->deleteLater();
     setStatus(ConnectionApi::StatusDisconnected, ConnectionApi::StatusReasonNone);
+}
+
+void ConnectionApiPrivate::onReconnectOperationFinished(PendingOperation *operation)
+{
+    qWarning() << Q_FUNC_INFO << "reconnect result:" << operation->errorDetails();
+    if (operation->isSucceeded()) {
+        checkIn();
+    }
 }
 
 void ConnectionApiPrivate::onUpcomingConnectionStatusChanged(BaseConnection::Status status,
@@ -315,6 +327,9 @@ void ConnectionApiPrivate::onMainConnectionStatusChanged(BaseConnection::Status 
         case ConnectionApi::StatusAuthenticated:
         case ConnectionApi::StatusReady:
             setStatus(ConnectionApi::StatusConnecting, ConnectionApi::StatusReasonRemote);
+            m_connectToServerOperation = m_mainConnection->connectToDc();
+            connect(m_connectToServerOperation, &ConnectOperation::finished,
+                    this, &ConnectionApiPrivate::onReconnectOperationFinished);
             break;
         }
     }

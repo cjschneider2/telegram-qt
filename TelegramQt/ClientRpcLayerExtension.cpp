@@ -20,6 +20,8 @@
 #include "PendingRpcOperation.hpp"
 #include "Utils.hpp"
 
+#include <QLoggingCategory>
+
 namespace Telegram {
 
 namespace Client {
@@ -54,10 +56,19 @@ void BaseRpcLayerExtension::prepareReplyStream(TelegramStream *stream, PendingRp
     stream->setData(data);
 }
 
+void BaseRpcLayerExtension::setRpcProcessingMethod(RpcProcessingMethod sendMethod)
+{
+    qDebug() << this << "update processing method";
+    m_processingMethod = sendMethod;
+}
+
 void BaseRpcLayerExtension::processRpcCall(PendingRpcOperation *operation)
 {
+    qDebug() << this << "process" << operation << TLValue::firstFromArray(operation->requestData());
     if (m_processingMethod) {
         m_processingMethod(operation);
+    } else {
+        qWarning() << Q_FUNC_INFO << this << operation << TLValue::firstFromArray(operation->requestData()) << "is not processed";
     }
 }
 

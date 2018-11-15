@@ -24,7 +24,7 @@ QString PendingOperation::c_text()
 
 void PendingOperation::startLater()
 {
-    QMetaObject::invokeMethod(this, "start", Qt::QueuedConnection);
+    QMetaObject::invokeMethod(this, [this] (){ start(); }, Qt::QueuedConnection);
 }
 
 void PendingOperation::runAfter(PendingOperation *operation)

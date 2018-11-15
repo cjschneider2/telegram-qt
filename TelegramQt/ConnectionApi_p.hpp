@@ -45,7 +45,7 @@ public:
     bool isSignedIn() const;
 
     // Public API implementation
-    PendingOperation *connectToServer(const QVector<DcOption> &dcOptions);
+    ConnectOperation *connectToServer(const QVector<DcOption> &dcOptions);
     AuthOperation *signIn();
     AuthOperation *checkIn();
     ConnectionApi::Status status() const { return m_status; }
@@ -61,6 +61,7 @@ public:
 
 protected slots:
     void onConnectOperationFinished(PendingOperation *operation);
+    void onReconnectOperationFinished(PendingOperation *operation);
     void onUpcomingConnectionStatusChanged(BaseConnection::Status status, BaseConnection::StatusReason reason);
     void onAuthFinished(PendingOperation *operation);
     void onAuthCodeRequired();

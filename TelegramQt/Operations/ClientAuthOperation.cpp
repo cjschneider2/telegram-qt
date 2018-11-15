@@ -124,7 +124,7 @@ PendingOperation *AuthOperationPrivate::checkAuthorization()
     PendingRpcOperation *updateStatusOperation = accountLayer()->updateStatus(false);
     connect(updateStatusOperation, &PendingRpcOperation::finished,
             this, &AuthOperationPrivate::onAccountStatusUpdateFinished);
-    return nullptr;
+    return updateStatusOperation;
 }
 
 PendingOperation *AuthOperation::requestAuthCode()

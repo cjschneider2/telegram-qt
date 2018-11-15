@@ -34,6 +34,8 @@
 #include "TelegramNamespace.hpp"
 #include "CAppInformation.hpp"
 
+#include "Operations/ConnectionOperation.hpp"
+
 #include <QTest>
 #include <QSignalSpy>
 #include <QLoggingCategory>
@@ -205,7 +207,7 @@ void tst_toOfficial::testGetConfiguration()
 
     // --- Connect ---
     Client::ConnectionApiPrivate *connectionApi = Client::ConnectionApiPrivate::get(backend->m_connectionApi);
-    PendingOperation *connectOperation = connectionApi->connectToServer(clientSettings.serverConfiguration());
+    Client::ConnectOperation *connectOperation = connectionApi->connectToServer(clientSettings.serverConfiguration());
     TRY_VERIFY(connectOperation->isFinished());
     QVERIFY(connectOperation->isSucceeded());
 
