@@ -39,11 +39,12 @@ public:
     enum Status {
         StatusDisconnected,
         StatusDisconnecting,
+        StatusWaitForReconnection, // Connection failed; wait for the next try
         StatusConnecting,
         StatusConnected, // Transport connection
-        StatusAuthRequired,
+        StatusAuthRequired, // DH connection
         StatusAuthenticated,
-        StatusReady // Initializated
+        StatusReady // Authenticated and got initial data
     };
     Q_ENUM(Status)
 

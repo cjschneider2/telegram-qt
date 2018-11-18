@@ -80,8 +80,14 @@ bool Server::start()
     }
     qDebug() << "Start a server" << m_dcOption.id << "on" << m_dcOption.address << ":" << m_dcOption.port << "Key:" << m_key.fingerprint;
 
-    addServiceUser();
     return true;
+}
+
+void Server::stop()
+{
+    if (m_serverSocket) {
+        m_serverSocket->close();
+    }
 }
 
 void Server::addServiceUser()
@@ -150,8 +156,10 @@ void Server::onNewConnection()
 void Server::onUserSessionAdded(Session *newSession)
 {
     RemoteUser *sender = getServiceUser();
+    if (!sender) {
+        return;
+    }
     User *recipient = newSession->user();
-
     QString text = QStringLiteral("Detected login from IP address %1").arg(newSession->ip);
 
     TLMessage m;
@@ -173,6 +181,9 @@ void Server::onClientConnectionStatusChanged()
         }
     } else if (client->status() == RemoteClientConnection::Status::Disconnected) {
         // TODO: Initiate session cleanup after session expiration time out
+        m_activeConnections.remove(client);
+        client->session()->setConnection(nullptr);
+        client->deleteLater();
     }
 }
 

@@ -327,9 +327,15 @@ void ConnectionApiPrivate::onMainConnectionStatusChanged(BaseConnection::Status 
         case ConnectionApi::StatusAuthenticated:
         case ConnectionApi::StatusReady:
             setStatus(ConnectionApi::StatusConnecting, ConnectionApi::StatusReasonRemote);
-            m_connectToServerOperation = m_mainConnection->connectToDc();
-            connect(m_connectToServerOperation, &ConnectOperation::finished,
+            DcOption wantedOption = m_mainConnection->dcOption();
+            m_mainConnection->deleteLater();
+            PendingOperation *reconnectOperation = connectToServer({wantedOption});
+            connect(reconnectOperation, &PendingOperation::finished,
                     this, &ConnectionApiPrivate::onReconnectOperationFinished);
+
+            //m_connectToServerOperation = m_mainConnection->connectToDc();
+            //connect(m_connectToServerOperation, &ConnectOperation::finished,
+            //        this, &ConnectionApiPrivate::onReconnectOperationFinished);
             break;
         }
     }

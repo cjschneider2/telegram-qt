@@ -70,11 +70,12 @@ class tst_ConnectionApi : public QObject
 public:
     explicit tst_ConnectionApi(QObject *parent = nullptr);
 
+    void testClientConnection_data();
+    void testClientConnection();
+
 private slots:
     void initTestCase();
     void cleanupTestCase();
-    void testClientConnection_data();
-    void testClientConnection();
     void reconnect();
 };
 
@@ -333,7 +334,21 @@ void tst_ConnectionApi::reconnect()
     {
         QVariantList firstSignal = clientConnectionStatusSpy.takeFirst();
         QCOMPARE(firstSignal.first().value<int>(), static_cast<int>(Client::ConnectionApi::StatusConnected));
+    }
+
+    server->stop();
+
+    TRY_VERIFY(!clientConnectionStatusSpy.isEmpty());
+    {
+        QVariantList firstSignal = clientConnectionStatusSpy.takeFirst();
+        QCOMPARE(firstSignal.first().value<int>(), static_cast<int>(Client::ConnectionApi::StatusConnecting));
         QCOMPARE(firstSignal.last().value<int>(), static_cast<int>(Client::ConnectionApi::StatusReasonRemote));
+    }
+
+    TRY_VERIFY(!clientConnectionStatusSpy.isEmpty());
+    {
+        QVariantList firstSignal = clientConnectionStatusSpy.takeFirst();
+        QCOMPARE(firstSignal.first().value<int>(), static_cast<int>(Client::ConnectionApi::StatusConnected));
     }
 }
 

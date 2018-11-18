@@ -37,6 +37,7 @@ public:
     void setServerPrivateRsaKey(const Telegram::RsaKey &key);
 
     bool start();
+    void stop();
     void addServiceUser();
     void loadData();
 

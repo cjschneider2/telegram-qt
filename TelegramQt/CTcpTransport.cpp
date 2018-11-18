@@ -59,16 +59,20 @@ QString CTcpTransport::remoteAddress() const
 
 void CTcpTransport::connectToHost(const QString &ipAddress, quint32 port)
 {
-    qCDebug(c_loggingTcpTransport) << Q_FUNC_INFO << ipAddress << port;
+    qCDebug(c_loggingTcpTransport) << this << Q_FUNC_INFO << ipAddress << port;
     m_socket->connectToHost(ipAddress, port);
 }
 
 void CTcpTransport::disconnectFromHost()
 {
-    qCDebug(c_loggingTcpTransport) << Q_FUNC_INFO;
+    qCDebug(c_loggingTcpTransport) << this << Q_FUNC_INFO;
     if (m_socket) {
         m_socket->disconnectFromHost();
     }
+    m_readBuffer.clear();
+    m_packetNumber = 0;
+    m_expectedLength = 0;
+    m_sessionType = Unknown;
 }
 
 CTcpTransport::SessionType CTcpTransport::sessionType() const
@@ -78,6 +82,8 @@ CTcpTransport::SessionType CTcpTransport::sessionType() const
 
 void CTcpTransport::sendPackageImplementation(const QByteArray &payload)
 {
+    qCDebug(c_loggingTcpTransport) << this << Q_FUNC_INFO << payload.size();
+
     // quint32 length (included length itself + packet number + crc32 + payload (MUST be divisible by 4)
     // quint32 packet number
     // quint32 CRC32 (length, quint32 packet number, payload)
@@ -91,9 +97,9 @@ void CTcpTransport::sendPackageImplementation(const QByteArray &payload)
     // Payload
 
     if (payload.length() % 4) {
-        qCCritical(c_loggingTcpTransport) << Q_FUNC_INFO
-                                            << "Invalid outgoing package! "
-                                               "The payload size is not divisible by four!";
+        qCCritical(c_loggingTcpTransport) << this << Q_FUNC_INFO
+                                          << "Invalid outgoing package! "
+                                             "The payload size is not divisible by four!";
     }
 
     QByteArray package;
@@ -119,10 +125,18 @@ void CTcpTransport::setSessionType(CTcpTransport::SessionType sessionType)
     m_sessionType = sessionType;
 }
 
+void CTcpTransport::resetCryptoKeys()
+{
+    delete m_readAesContext;
+    m_readAesContext = nullptr;
+    delete m_writeAesContext;
+    m_writeAesContext = nullptr;
+}
+
 void CTcpTransport::setCryptoKeysSourceData(const QByteArray &source, SourceRevertion revertion)
 {
     if (source.size() != (Crypto::AesCtrContext::KeySize + Crypto::AesCtrContext::IvecSize)) {
-        qCWarning(c_loggingTcpTransport) << Q_FUNC_INFO << "Invalid input data (size mismatch)";
+        qCWarning(c_loggingTcpTransport) << this << Q_FUNC_INFO << "Invalid input data (size mismatch)";
         return;
     }
     QByteArray reversed = source;
@@ -153,7 +167,7 @@ void CTcpTransport::setCryptoKeysSourceData(const QByteArray &source, SourceReve
 
 void CTcpTransport::setState(QAbstractSocket::SocketState newState)
 {
-    qCDebug(c_loggingTcpTransport) << Q_FUNC_INFO << newState;
+    qCDebug(c_loggingTcpTransport) << this << Q_FUNC_INFO << newState;
     switch (newState) {
     case QAbstractSocket::HostLookupState:
     case QAbstractSocket::ConnectingState:
@@ -172,7 +186,7 @@ void CTcpTransport::setState(QAbstractSocket::SocketState newState)
 
 void CTcpTransport::onReadyRead()
 {
-    qCDebug(c_loggingTcpTransport) << Q_FUNC_INFO << m_socket->bytesAvailable();
+    qCDebug(c_loggingTcpTransport) << this << Q_FUNC_INFO << m_socket->bytesAvailable();
     readEvent();
     if (m_sessionType == Unknown) {
         qCCritical(c_loggingTcpTransport) << "Unknown session type!";
@@ -197,11 +211,14 @@ void CTcpTransport::onReadyRead()
                 m_expectedLength *= 4;
                 m_readBuffer = m_readBuffer.mid(4);
             } else {
-                qCWarning(c_loggingTcpTransport) << "Invalid packet size byte" << hex << showbase << length_t1;
+                qCWarning(c_loggingTcpTransport) << this << "Invalid packet size byte" << hex << showbase << length_t1;
+                setError(QAbstractSocket::UnknownSocketError, QStringLiteral("Invalid read operation"));
+                disconnectFromHost();
+                return;
             }
         }
         if (m_readBuffer.size() < static_cast<qint64>(m_expectedLength)) {
-            qCDebug(c_loggingTcpTransport) << Q_FUNC_INFO << "Ready read, but only "
+            qCDebug(c_loggingTcpTransport) << this << Q_FUNC_INFO << "Ready read, but only "
                                            << m_readBuffer.size() << "bytes available ("
                                            << m_expectedLength << "bytes expected)";
             return;
@@ -209,7 +226,7 @@ void CTcpTransport::onReadyRead()
         const QByteArray readPackage = m_readBuffer.left(m_expectedLength);
         m_readBuffer = m_readBuffer.mid(m_expectedLength);
         m_expectedLength = 0;
-        qCDebug(c_loggingTcpTransport) << Q_FUNC_INFO
+        qCDebug(c_loggingTcpTransport) << this << Q_FUNC_INFO
                                          << "Received a package (" << readPackage.size() << " bytes)";
         emit packageReceived(readPackage);
     }
@@ -217,7 +234,7 @@ void CTcpTransport::onReadyRead()
 
 void CTcpTransport::onTimeout()
 {
-    qCDebug(c_loggingTcpTransport) << Q_FUNC_INFO << m_socket->peerName() << m_socket->peerPort();
+    qCDebug(c_loggingTcpTransport) << this << Q_FUNC_INFO << m_socket->peerName() << m_socket->peerPort();
     emit timeout();
     m_socket->disconnectFromHost();
 }
@@ -230,7 +247,7 @@ void CTcpTransport::onSocketErrorOccurred(QAbstractSocket::SocketError error)
 void CTcpTransport::setSocket(QAbstractSocket *socket)
 {
     if (m_socket) {
-        qCCritical(c_loggingTcpTransport()) << Q_FUNC_INFO << "An attempt to set a socket twice";
+        qCCritical(c_loggingTcpTransport()) << this << Q_FUNC_INFO << "An attempt to set a socket twice";
     }
     m_socket = socket;
     connect(m_socket, &QAbstractSocket::stateChanged, this, &CTcpTransport::setState);
