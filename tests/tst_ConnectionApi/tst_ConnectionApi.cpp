@@ -187,8 +187,8 @@ void tst_ConnectionApi::testClientConnection()
     const QString authCode = authCodeSentArguments.at(1).toString();
 
     TRY_COMPARE(clientConnectionStatusSpy.count(), 1);
-    QCOMPARE(connectionApi->status(), Telegram::Client::ConnectionApi::StatusAuthRequired);
-    QCOMPARE(clientConnectionStatusSpy.takeFirst().first().value<int>(), static_cast<int>(Client::ConnectionApi::StatusAuthRequired));
+    QCOMPARE(connectionApi->status(), Telegram::Client::ConnectionApi::StatusConnected);
+    QCOMPARE(clientConnectionStatusSpy.takeFirst().first().value<int>(), static_cast<int>(Client::ConnectionApi::StatusConnected));
 
     signInOperation->submitAuthCode(authCode);
 
@@ -279,8 +279,8 @@ void tst_ConnectionApi::reconnect()
     const QString authCode = authCodeSentArguments.at(1).toString();
 
     TRY_COMPARE(clientConnectionStatusSpy.count(), 1);
-    QCOMPARE(connectionApi->status(), Telegram::Client::ConnectionApi::StatusAuthRequired);
-    QCOMPARE(clientConnectionStatusSpy.takeFirst().first().value<int>(), static_cast<int>(Client::ConnectionApi::StatusAuthRequired));
+    QCOMPARE(connectionApi->status(), Telegram::Client::ConnectionApi::StatusConnected);
+    QCOMPARE(clientConnectionStatusSpy.takeFirst().first().value<int>(), static_cast<int>(Client::ConnectionApi::StatusConnected));
 
     signInOperation->submitAuthCode(authCode);
 

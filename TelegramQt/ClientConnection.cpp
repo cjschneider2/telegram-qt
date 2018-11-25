@@ -88,7 +88,15 @@ RpcLayer *Connection::rpcLayer()
     return reinterpret_cast<RpcLayer*>(m_rpcLayer);
 }
 
+void Connection::connectToDc()
+{
+    setStatus(Status::Connecting, StatusReason::Local);
+    m_transport->connectToHost(m_dcOption.address, m_dcOption.port);
+}
+
 /*!
+  \fn ConnectOperation *Connection::connectToDc()
+
   Initiates connection to DC and returns an Operation object.
 
   This method establish Transport (TCP/UDP/HTTP) level connection.
@@ -97,7 +105,7 @@ RpcLayer *Connection::rpcLayer()
 
   \sa BaseTransport::connectToHost()
 */
-ConnectOperation *Connection::connectToDc()
+ConnectOperation *Connection::connectToDcOld()
 {
     if (m_status != Status::Disconnected) {
         const QString text = QStringLiteral("Connection is already in progress");
@@ -144,7 +152,7 @@ ConnectOperation *Connection::connectToDc()
 void Connection::processSeeOthers(PendingRpcOperation *operation)
 {
     if (m_status == Status::Disconnected) {
-        connectToDc();
+        connectToDcOld();
     }
     if (m_dhLayer->state() != DhLayer::State::HasKey) {
         qCDebug(c_clientConnectionCategory) << "processSeeOthers():" << "queue operation:" << TLValue::firstFromArray(operation->requestData());

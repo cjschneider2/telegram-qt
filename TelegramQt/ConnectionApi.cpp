@@ -34,26 +34,73 @@ ConnectionApiPrivate *ConnectionApiPrivate::get(ConnectionApi *parent)
 bool ConnectionApiPrivate::isSignedIn() const
 {
     switch (m_status) {
-    case ConnectionApi::StatusAuthenticated:
+    case ConnectionApi::StatusConnected:
     case ConnectionApi::StatusReady:
         return true;
     case ConnectionApi::StatusDisconnected:
     case ConnectionApi::StatusConnecting:
-    case ConnectionApi::StatusConnected:
-    case ConnectionApi::StatusAuthRequired:
+    case ConnectionApi::StatusWaitForAuthentication:
         return false;
     }
     Q_UNREACHABLE();
 }
 
-Connection *ConnectionApiPrivate::getDefaultConnection()
+bool ConnectionApiPrivate::connectToServer()
 {
-    if (mainConnection()) {
-        return mainConnection();
+    QVariantHash errorDetails = getBackendSetupErrorDetails();
+    if (!errorDetails.isEmpty()) {
+        qCWarning(c_connectionApiLoggingCategory) << "Unable to initiate connection:" << errorDetails;
+        return false;
     }
 
-    if (m_connectToServerOperation) {
-        return m_connectToServerOperation->connection();
+    connectToServer(backend()->settings()->serverConfiguration());
+    return true;
+}
+
+void ConnectionApiPrivate::disconnectFromServer()
+{
+
+}
+
+void ConnectionApiPrivate::connectToServer(const QVector<DcOption> &dcOptions)
+{
+    m_serverConfiguration = dcOptions;
+    m_nextServerAddressIndex = 0;
+    connectToNextServer();
+}
+
+void ConnectionApiPrivate::connectToNextServer()
+{
+    if (m_initialConnection) {
+        disconnect(m_initialConnection, &BaseConnection::statusChanged,
+                   this, &ConnectionApiPrivate::onInitialConnectionStatusChanged);
+        m_initialConnection->deleteLater();
+        m_initialConnection = nullptr;
+    }
+
+    m_initialConnection = createConnection(m_serverConfiguration.at(m_nextServerAddressIndex));
+    connect(m_initialConnection, &BaseConnection::statusChanged, this, &ConnectionApiPrivate::onInitialConnectionStatusChanged);
+
+    m_initialConnection->connectToDc();
+    ++m_nextServerAddressIndex;
+    if (m_serverConfiguration.count() < m_nextServerAddressIndex) {
+        m_nextServerAddressIndex = 0;
+    }
+}
+
+void ConnectionApiPrivate::queueConnectToNextServer()
+{
+    setStatus(ConnectionApi::StatusWaitForReconnection, ConnectionApi::StatusReasonLocal);
+    connectToNextServer();
+}
+
+Connection *ConnectionApiPrivate::getDefaultConnection()
+{
+    if (m_mainConnection) {
+        return m_mainConnection;
+    }
+    if (m_initialConnection) {
+        return m_initialConnection;
     }
     return nullptr;
 }
@@ -70,23 +117,28 @@ void ConnectionApiPrivate::setMainConnection(Connection *connection)
     onMainConnectionStatusChanged(connection->status(), Connection::StatusReason::Local);
 }
 
-ConnectOperation *ConnectionApiPrivate::connectToServer(const QVector<DcOption> &dcOptions)
+/*! \fn ConnectOperation *ConnectionApiPrivate::connectToServer(const QVector<DcOption> &dcOptions)
+
+  The operation succeed on DH-encrypted connection established with any server from \a dcOptions.
+  The operation fails in case of incorrect setup or if there is an already active connection operation.
+*/
+ConnectOperation *ConnectionApiPrivate::connectToServerOld(const QVector<DcOption> &dcOptions)
 {
-    if (m_connectToServerOperation) {
-        if (dcOptions.contains(m_connectToServerOperation->connection()->dcOption())) {
-            switch (m_connectToServerOperation->connection()->status()) {
+    if (m_initialConnectOperation) {
+        if (dcOptions.contains(m_initialConnectOperation->connection()->dcOption())) {
+            switch (m_initialConnectOperation->connection()->status()) {
             case BaseConnection::Status::Connecting:
             case BaseConnection::Status::Connected:
             case BaseConnection::Status::HasDhKey:
             case BaseConnection::Status::Signed:
-                return m_connectToServerOperation;
+                return m_initialConnectOperation;
             default:
-                m_connectToServerOperation->connection()->transport()->disconnectFromHost();
+                m_initialConnectOperation->connection()->transport()->disconnectFromHost();
                 break;
             }
         }
-        m_connectToServerOperation->deleteLater();
-        m_connectToServerOperation = nullptr;
+        m_initialConnectOperation->deleteLater();
+        m_initialConnectOperation = nullptr;
     }
 
     if (mainConnection()) {
@@ -109,24 +161,22 @@ ConnectOperation *ConnectionApiPrivate::connectToServer(const QVector<DcOption> 
 
     Connection *connection = createConnection(dcOptions.first());
     connect(connection, &BaseConnection::statusChanged,
-            this, &ConnectionApiPrivate::onUpcomingConnectionStatusChanged);
+            this, &ConnectionApiPrivate::onInitialConnectionStatusChanged);
 
-    m_connectToServerOperation = connection->connectToDc();
-    connect(m_connectToServerOperation, &PendingOperation::finished, this, &ConnectionApiPrivate::onConnectOperationFinished);
-    return m_connectToServerOperation;
+    m_initialConnectOperation = connection->connectToDcOld();
+    connect(m_initialConnectOperation, &PendingOperation::finished, this, &ConnectionApiPrivate::onInitialConnectOperationFinished);
+    return m_initialConnectOperation;
 }
 
-AuthOperation *ConnectionApiPrivate::signIn()
+AuthOperation *ConnectionApiPrivate::startAuthentication()
 {
-    if (isSignedIn()) {
-        return PendingOperation::failOperation<AuthOperation>
-                (QStringLiteral("Already signed in"), this);
+    QVariantHash errorDetails = getBackendSetupErrorDetails();
+    if (!errorDetails.isEmpty()) {
+        return PendingOperation::failOperation<AuthOperation>(errorDetails, this);
     }
-    Settings *settings = backend()->m_settings;
-    if (!settings || !settings->isValid()) {
-        qCWarning(c_connectionApiLoggingCategory) << "Invalid settings";
+    if (status() != ConnectionApi::StatusWaitForAuthentication) {
         return PendingOperation::failOperation<AuthOperation>
-                (QStringLiteral("Invalid settings"), this);
+                (QStringLiteral("Invalid connection status (expected StatusWaitForAuthentication)"), this);
     }
     if (m_authOperation && !m_authOperation->isFinished()) {
         return PendingOperation::failOperation<AuthOperation>
@@ -139,40 +189,74 @@ AuthOperation *ConnectionApiPrivate::signIn()
     priv->setRunMethod(&AuthOperation::requestAuthCode);
     connect(m_authOperation, &AuthOperation::finished, this, &ConnectionApiPrivate::onAuthFinished);
     connect(m_authOperation, &AuthOperation::authCodeRequired, this, &ConnectionApiPrivate::onAuthCodeRequired);
-    PendingOperation *connectionOperation = connectToServer(settings->serverConfiguration());
-    m_authOperation->runAfter(connectionOperation);
+    m_authOperation->startLater();
     return m_authOperation;
 }
 
 AuthOperation *ConnectionApiPrivate::checkIn()
 {
-    if (m_authOperation && !m_authOperation->isFinished()) {
-        return PendingOperation::failOperation<AuthOperation>
-                (QStringLiteral("Auth operation is already in progress"), this);
+    QVariantHash errorDetails = getBackendSetupErrorDetails();
+    if (!errorDetails.isEmpty()) {
+        qCWarning(c_connectionApiLoggingCategory) << "Unable to initiate connection:" << errorDetails;
+        return nullptr;
     }
-    AccountStorage *accountStorage = backend()->accountStorage();
-    if (!accountStorage || !accountStorage->hasMinimalDataSet()) {
-        return PendingOperation::failOperation<AuthOperation>
-                (QStringLiteral("No minimal account data set"), this);
-    }
-    m_authOperation = new AuthOperation(this);
-    AuthOperationPrivate *priv = AuthOperationPrivate::get(m_authOperation);
-    priv->setBackend(backend());
-    priv->setRunMethod(&AuthOperation::checkAuthorization);
-    connect(m_authOperation, &AuthOperation::finished, this, &ConnectionApiPrivate::onAuthFinished);
-    if (m_mainConnection) {
-        m_authOperation->startLater();
-    } else {
-        ConnectOperation *connectionOperation = connectToServer({accountStorage->dcInfo()});
-        connectionOperation->connection()->setAuthKey(accountStorage->authKey());
-        connectionOperation->connection()->rpcLayer()->setSessionData(
-                    accountStorage->sessionId(),
-                    accountStorage->contentRelatedMessagesNumber());
-        m_authOperation->runAfter(connectionOperation);
-    }
-    return m_authOperation;
+
+    connectToServerOld(backend()->settings()->serverConfiguration());
+
+
+
+
+//    if (m_authOperation && !m_authOperation->isFinished()) {
+//        return PendingOperation::failOperation<AuthOperation>
+//                (QStringLiteral("Auth operation is already in progress"), this);
+//    }
+//    AccountStorage *accountStorage = backend()->accountStorage();
+//    if (!accountStorage || !accountStorage->hasMinimalDataSet()) {
+//        return PendingOperation::failOperation<AuthOperation>
+//                (QStringLiteral("No minimal account data set"), this);
+//    }
+//    m_authOperation = new AuthOperation(this);
+//    AuthOperationPrivate *priv = AuthOperationPrivate::get(m_authOperation);
+//    priv->setBackend(backend());
+//    priv->setRunMethod(&AuthOperation::checkAuthorization);
+//    connect(m_authOperation, &AuthOperation::finished, this, &ConnectionApiPrivate::onAuthFinished);
+//    if (m_mainConnection) {
+//        m_authOperation->startLater();
+//    } else {
+//        ConnectOperation *connectionOperation = connectToServer({accountStorage->dcInfo()});
+//        connectionOperation->connection()->setAuthKey(accountStorage->authKey());
+//        connectionOperation->connection()->rpcLayer()->setSessionData(
+//                    accountStorage->sessionId(),
+//                    accountStorage->contentRelatedMessagesNumber());
+//        m_authOperation->runAfter(connectionOperation);
+//    }
+//    return m_authOperation;
+    return nullptr;
 }
 
+QVariantHash ConnectionApiPrivate::getBackendSetupErrorDetails() const
+{
+    if (!backend()->accountStorage()) {
+        return {{PendingOperation::c_text(), QStringLiteral("Account storage is missing")}};
+    }
+    if (!backend()->dataStorage()) {
+        return {{PendingOperation::c_text(), QStringLiteral("Data storage is missing")}};
+    }
+    Settings *settings = backend()->settings();
+    if (!settings) {
+        return {{PendingOperation::c_text(), QStringLiteral("Settings object is missing")}};
+    }
+    if (!settings->isValid()) {
+        return {{PendingOperation::c_text(), QStringLiteral("Invalid settings")}};
+    }
+    return {};
+}
+
+/*!
+  \fn Connection *ConnectionApiPrivate::createConnection(const DcOption &dcOption)
+
+  The method constructs new Connection ready to connect to the passed server address.
+*/
 Connection *ConnectionApiPrivate::createConnection(const DcOption &dcOption)
 {
     Connection *connection = new Connection(this);
@@ -202,34 +286,34 @@ Connection *ConnectionApiPrivate::createConnection(const DcOption &dcOption)
     return connection;
 }
 
-Connection *ConnectionApiPrivate::ensureConnection(const ConnectionSpec &dcSpec)
+/*!
+  \fn Connection *ConnectionApiPrivate::ensureConnection(const DcOption &dcOption)
+
+  The method returns new or existing Connection to the passed server address.
+
+  The returned Connection is prepaired to work with /a connectionSpec and can have any status.
+*/
+Connection *ConnectionApiPrivate::ensureConnection(const ConnectionSpec &connectionSpec)
 {
-    qCDebug(c_connectionApiLoggingCategory) << Q_FUNC_INFO << dcSpec.dcId << dcSpec.flags;
-    ConnectionSpec spec = dcSpec;
+    qCDebug(c_connectionApiLoggingCategory) << Q_FUNC_INFO << connectionSpec.dcId << connectionSpec.flags;
+    ConnectionSpec spec = connectionSpec;
     spec.flags |= ConnectionSpec::RequestFlag::Ipv4Only; // Enable only ipv4 for now
-    if (!m_connections.contains(dcSpec)) {
+    if (!m_connections.contains(connectionSpec)) {
         const DcOption opt = backend()->dataStorage()->serverConfiguration().getOption(spec);
         if (!opt.isValid()) {
             qCWarning(c_connectionApiLoggingCategory) << Q_FUNC_INFO << "Unable to find suitable DC";
             return nullptr;
         }
-        m_connections.insert(dcSpec, createConnection(opt));
+        m_connections.insert(connectionSpec, createConnection(opt));
     }
-    return m_connections.value(dcSpec);
+    return m_connections.value(connectionSpec);
 }
 
-void ConnectionApiPrivate::onConnectOperationFinished(PendingOperation *operation)
+void ConnectionApiPrivate::onInitialConnectOperationFinished(PendingOperation *operation)
 {
-    disconnect(m_connectToServerOperation->connection(), &BaseConnection::statusChanged,
-               this, &ConnectionApiPrivate::onUpcomingConnectionStatusChanged);
+    disconnect(m_initialConnection, &BaseConnection::statusChanged,
+               this, &ConnectionApiPrivate::onInitialConnectionStatusChanged);
 
-    if (operation->isSucceeded()) {
-        backend()->getDcConfig();
-        return;
-    }
-    m_connectToServerOperation = nullptr;
-    operation->deleteLater();
-    setStatus(ConnectionApi::StatusDisconnected, ConnectionApi::StatusReasonNone);
 }
 
 void ConnectionApiPrivate::onReconnectOperationFinished(PendingOperation *operation)
@@ -240,22 +324,25 @@ void ConnectionApiPrivate::onReconnectOperationFinished(PendingOperation *operat
     }
 }
 
-void ConnectionApiPrivate::onUpcomingConnectionStatusChanged(BaseConnection::Status status,
+void ConnectionApiPrivate::onInitialConnectionStatusChanged(BaseConnection::Status status,
                                                              BaseConnection::StatusReason reason)
 {
     qCDebug(c_connectionApiLoggingCategory) << Q_FUNC_INFO << status << reason;
     switch (status) {
     case BaseConnection::Status::Disconnected:
     case BaseConnection::Status::Disconnecting:
-        setStatus(ConnectionApi::StatusDisconnected, ConnectionApi::StatusReasonNone);
+        connectToNextServer();
         break;
     case BaseConnection::Status::Connecting:
         setStatus(ConnectionApi::StatusConnecting, ConnectionApi::StatusReasonNone);
         break;
     case BaseConnection::Status::Connected:
-        setStatus(ConnectionApi::StatusConnected, ConnectionApi::StatusReasonNone);
+        // Nothing to do; wait for DH
         break;
     case BaseConnection::Status::HasDhKey:
+        backend()->getDcConfig();
+        setStatus(ConnectionApi::StatusWaitForAuthentication, ConnectionApi::StatusReasonNone);
+        break;
     case BaseConnection::Status::Signed:
     case BaseConnection::Status::Failed:
         break;
@@ -269,7 +356,7 @@ void ConnectionApiPrivate::onAuthFinished(PendingOperation *operation)
         return;
     }
     if (!operation->isSucceeded()) {
-        setStatus(ConnectionApi::StatusAuthRequired, ConnectionApi::StatusReasonNone);
+        setStatus(ConnectionApi::StatusWaitForAuthentication, ConnectionApi::StatusReasonNone);
         qCDebug(c_connectionApiLoggingCategory) << Q_FUNC_INFO << "TODO?";
         return;
     }
@@ -284,7 +371,7 @@ void ConnectionApiPrivate::onAuthFinished(PendingOperation *operation)
 
 void ConnectionApiPrivate::onAuthCodeRequired()
 {
-    setStatus(ConnectionApi::StatusAuthRequired, ConnectionApi::StatusReasonRemote);
+    setStatus(ConnectionApi::StatusWaitForAuthentication, ConnectionApi::StatusReasonRemote);
 }
 
 void ConnectionApiPrivate::onMainConnectionStatusChanged(BaseConnection::Status status, BaseConnection::StatusReason reason)
@@ -312,7 +399,7 @@ void ConnectionApiPrivate::onMainConnectionStatusChanged(BaseConnection::Status 
     case Connection::Status::Signed:
     {
         backend()->syncAccountToStorage();
-        setStatus(ConnectionApi::StatusAuthenticated, ConnectionApi::StatusReasonNone);
+        setStatus(ConnectionApi::StatusConnected, ConnectionApi::StatusReasonNone);
         PendingOperation *syncOperation = backend()->sync();
         connect(syncOperation, &PendingOperation::finished, this, &ConnectionApiPrivate::onSyncFinished);
         syncOperation->startLater();
@@ -324,12 +411,12 @@ void ConnectionApiPrivate::onMainConnectionStatusChanged(BaseConnection::Status 
         case ConnectionApi::StatusDisconnecting:
             setStatus(ConnectionApi::StatusDisconnected, ConnectionApi::StatusReasonLocal);
             break;
-        case ConnectionApi::StatusAuthenticated:
+        case ConnectionApi::StatusConnected:
         case ConnectionApi::StatusReady:
             setStatus(ConnectionApi::StatusConnecting, ConnectionApi::StatusReasonRemote);
             DcOption wantedOption = m_mainConnection->dcOption();
             m_mainConnection->deleteLater();
-            PendingOperation *reconnectOperation = connectToServer({wantedOption});
+            PendingOperation *reconnectOperation = connectToServerOld({wantedOption});
             connect(reconnectOperation, &PendingOperation::finished,
                     this, &ConnectionApiPrivate::onReconnectOperationFinished);
 
@@ -369,6 +456,12 @@ void ConnectionApiPrivate::setStatus(ConnectionApi::Status status, ConnectionApi
     emit q->statusChanged(status, reason);
 }
 
+/*!
+    \class Telegram::Client::ConnectionApi
+    \inmodule TelegramQt
+    \ingroup Client
+*/
+
 ConnectionApi::ConnectionApi(QObject *parent) :
     ClientApi(parent)
 {
@@ -387,26 +480,58 @@ ConnectionApi::Status ConnectionApi::status() const
     return d->status();
 }
 
-Telegram::Client::AuthOperation *ConnectionApi::signUp()
-{
-     return signIn();
-}
+/*! \fn bool ConnectionApi::connectToServer()
 
-Telegram::Client::AuthOperation *ConnectionApi::signIn()
+  Establish a connection to a server from Settings
+
+  Returns \c false in case of incorrect setup; otherwise returns \c true.
+
+  \sa disconnectFromServer()
+*/
+bool ConnectionApi::connectToServer()
 {
     Q_D(ConnectionApi);
-    return d->signIn();
+    return d->connectToServer();
 }
 
-AuthOperation *ConnectionApi::checkIn()
+/*! \fn void ConnectionApi::disconnectFromServer()
+  Establish a connection to a server from Settings
+
+  Return false in case of incorrect setup, returns true otherwise.
+*/
+void ConnectionApi::disconnectFromServer()
+{
+    Q_D(ConnectionApi);
+    return d->disconnectFromServer();
+}
+
+Telegram::Client::AuthOperation *ConnectionApi::startAuthentication()
+{
+    Q_D(ConnectionApi);
+    return d->startAuthentication();
+}
+
+/*! \fn AuthOperation *ConnectionApi::checkIn()
+  High level API for establishing the main connection needed for the most of RPC calls
+
+  The operation succeed on connection established and server confirmed the session data.
+  The typical reasons to fail are:
+  \list 1
+      \li There is an already active connection
+      \li The account storage has no session information
+      \li Incorrect setup (e.g. AccountStorage is not set)
+      \li Server declined the session data
+      \li The session is explicitly revoked from another session
+  \endlist
+
+  \note The operation doesn't fail in case of network errors (it keeps trying to connect).
+
+  \sa PendingOperation::errorDetails()
+*/
+Telegram::PendingOperation *ConnectionApi::checkIn()
 {
     Q_D(ConnectionApi);
     return d->checkIn();
-}
-
-PendingOperation *ConnectionApi::disconnectFromHost()
-{
-    return nullptr;
 }
 
 } // Client namespace

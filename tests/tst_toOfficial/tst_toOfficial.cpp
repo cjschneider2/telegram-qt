@@ -207,7 +207,7 @@ void tst_toOfficial::testGetConfiguration()
 
     // --- Connect ---
     Client::ConnectionApiPrivate *connectionApi = Client::ConnectionApiPrivate::get(backend->m_connectionApi);
-    Client::ConnectOperation *connectOperation = connectionApi->connectToServer(clientSettings.serverConfiguration());
+    Client::ConnectOperation *connectOperation = connectionApi->connectToServerOld(clientSettings.serverConfiguration());
     TRY_VERIFY(connectOperation->isFinished());
     QVERIFY(connectOperation->isSucceeded());
 

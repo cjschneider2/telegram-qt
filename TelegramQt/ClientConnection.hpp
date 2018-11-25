@@ -29,7 +29,8 @@ public:
     RpcLayer *rpcLayer();
 
 public slots:
-    ConnectOperation *connectToDc();
+    void connectToDc();
+    ConnectOperation *connectToDcOld();
 //    void disconnectFromDc();
     void processSeeOthers(PendingRpcOperation *operation);
 

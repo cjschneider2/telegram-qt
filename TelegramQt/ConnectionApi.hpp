@@ -41,9 +41,8 @@ public:
         StatusDisconnecting,
         StatusWaitForReconnection, // Connection failed; wait for the next try
         StatusConnecting,
-        StatusConnected, // Transport connection
-        StatusAuthRequired, // DH connection
-        StatusAuthenticated,
+        StatusWaitForAuthentication, // DH connection
+        StatusConnected,
         StatusReady // Authenticated and got initial data
     };
     Q_ENUM(Status)
@@ -59,10 +58,10 @@ public:
     bool isSignedIn() const;
     Status status() const;
 
-    AuthOperation *signUp();
-    AuthOperation *signIn();
-    AuthOperation *checkIn();
-    PendingOperation *disconnectFromHost();
+    bool connectToServer();
+    void disconnectFromServer();
+    AuthOperation *startAuthentication();
+    PendingOperation *checkIn();
 
 Q_SIGNALS:
     void statusChanged(Telegram::Client::ConnectionApi::Status status, Telegram::Client::ConnectionApi::StatusReason reason);

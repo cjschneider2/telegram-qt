@@ -45,24 +45,33 @@ public:
     bool isSignedIn() const;
 
     // Public API implementation
-    ConnectOperation *connectToServer(const QVector<DcOption> &dcOptions);
-    AuthOperation *signIn();
+    bool connectToServer();
+    void disconnectFromServer();
+
+    void connectToServer(const QVector<DcOption> &dcOptions);
+    void connectToNextServer();
+    void queueConnectToNextServer();
+
+    ConnectOperation *connectToServerOld(const QVector<DcOption> &dcOptions);
+    AuthOperation *startAuthentication();
     AuthOperation *checkIn();
     ConnectionApi::Status status() const { return m_status; }
+
+    QVariantHash getBackendSetupErrorDetails() const;
 
 public:
     // Internal TelegramQt API
     Connection *createConnection(const DcOption &dcOption);
-    Connection *ensureConnection(const ConnectionSpec &dcSpec);
+    Connection *ensureConnection(const ConnectionSpec &connectionSpec);
 
     Connection *getDefaultConnection();
     Connection *mainConnection();
     void setMainConnection(Connection *connection);
 
 protected slots:
-    void onConnectOperationFinished(PendingOperation *operation);
+    void onInitialConnectOperationFinished(PendingOperation *operation);
     void onReconnectOperationFinished(PendingOperation *operation);
-    void onUpcomingConnectionStatusChanged(BaseConnection::Status status, BaseConnection::StatusReason reason);
+    void onInitialConnectionStatusChanged(BaseConnection::Status status, BaseConnection::StatusReason reason);
     void onAuthFinished(PendingOperation *operation);
     void onAuthCodeRequired();
     void onMainConnectionStatusChanged(BaseConnection::Status status, BaseConnection::StatusReason reason);
@@ -74,11 +83,14 @@ protected:
 
     QHash<ConnectionSpec, Connection *> m_connections;
     Connection *m_mainConnection = nullptr;
-    ConnectOperation *m_connectToServerOperation = nullptr;
+    Connection *m_initialConnection = nullptr;
+    ConnectOperation *m_initialConnectOperation = nullptr;
     AuthOperation *m_authOperation = nullptr;
     PingOperation *m_pingOperation = nullptr;
 
     ConnectionApi::Status m_status = ConnectionApi::StatusDisconnected;
+    QVector<DcOption> m_serverConfiguration;
+    int m_nextServerAddressIndex = 0;
 };
 
 } // Client namespace
