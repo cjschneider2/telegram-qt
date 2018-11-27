@@ -64,6 +64,10 @@ void ConnectionApiPrivate::disconnectFromServer()
 
 void ConnectionApiPrivate::connectToServer(const QVector<DcOption> &dcOptions)
 {
+    if (dcOptions.isEmpty()) {
+        qCCritical(c_connectionApiLoggingCategory) << "Unable to connect to server without no any address given";
+        return;
+    }
     m_serverConfiguration = dcOptions;
     m_nextServerAddressIndex = 0;
     connectToNextServer();
@@ -83,7 +87,7 @@ void ConnectionApiPrivate::connectToNextServer()
 
     m_initialConnection->connectToDc();
     ++m_nextServerAddressIndex;
-    if (m_serverConfiguration.count() < m_nextServerAddressIndex) {
+    if (m_serverConfiguration.count() <= m_nextServerAddressIndex) {
         m_nextServerAddressIndex = 0;
     }
 }
